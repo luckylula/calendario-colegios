@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EstadoCalendario {
+  borrador
+  confirmado
+}
+
+enum TipoEvento {
+  vacaciones
+  festivo_oficial
+  festivo_lliure_disposicio
+  jornada_intensiva
+  jornada_continuada
+  festivo_local
+}
+
+enum TipoPersonal {
+  monitor
+  coordinador
+}
+
+model Colegio {
+  id                        String            @id @default(cuid())
+  nombre                    String
+  nombreCarpetaDrive        String            @map("nombre_carpeta_drive")
+  googleDriveFolderId       String            @map("google_drive_folder_id")
+  onedriveFolderId          String            @map("onedrive_folder_id")
+  googleDriveOutputFolderId String?           @map("google_drive_output_folder_id")
+  createdAt                 DateTime          @default(now()) @map("created_at")
+  updatedAt                 DateTime          @updatedAt @map("updated_at")
+  calendarios               CalendarioCurso[]
+
+  @@unique([nombreCarpetaDrive])
+  @@map("colegios")
+}
+
+model CalendarioCurso {
+  id              String             @id @default(cuid())
+  colegioId       String             @map("colegio_id")
+  curso           String
+  inicioCurso     DateTime           @map("inicio_curso") @db.Date
+  finCurso        DateTime           @map("fin_curso") @db.Date
+  estado          EstadoCalendario   @default(borrador)
+  tipoPersonal    TipoPersonal       @default(monitor) @map("tipo_personal")
+  horasSemanales  Float              @default(37.5) @map("horas_semanales")
+  creadoViaIa     Boolean            @default(false) @map("creado_via_ia")
+  fechaGeneracion DateTime?          @map("fecha_generacion")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  colegio         Colegio            @relation(fields: [colegioId], references: [id], onDelete: Cascade)
+  eventos         EventoCalendario[]
+
+  @@unique([colegioId, curso])
+  @@index([colegioId])
+  @@map("calendarios_curso")
+}
+
+model EventoCalendario {
+  id           String          @id @default(cuid())
+  calendarioId String          @map("calendario_id")
+  tipo         TipoEvento
+  nombre       String
+  fechaInicio  DateTime        @map("fecha_inicio") @db.Date
+  fechaFin     DateTime?       @map("fecha_fin") @db.Date
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  calendario   CalendarioCurso @relation(fields: [calendarioId], references: [id], onDelete: Cascade)
+
+  @@index([calendarioId])
+  @@map("eventos_calendario")
+}
