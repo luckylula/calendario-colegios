@@ -1,7 +1,9 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatDateDisplay } from "@/lib/constants";
+import { LOGO_SRC } from "@/lib/branding";
 import { HistorialActions } from "@/components/HistorialActions";
 
 export const dynamic = "force-dynamic";
@@ -51,8 +53,18 @@ export default async function HistorialPage({ params }: PageProps) {
           <p className="text-slate-600">Encara no hi ha calendaris per a aquest centre.</p>
           <Link
             href={`/colegios/${id}/nuevo-curso`}
-            className="mt-4 inline-block rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-900"
           >
+            <span className="flex h-7 items-center rounded-md bg-white px-1.5">
+              <Image
+                src={LOGO_SRC}
+                alt=""
+                width={72}
+                height={24}
+                className="h-5 w-auto object-contain"
+                aria-hidden
+              />
+            </span>
             Crear primer calendari
           </Link>
         </div>
