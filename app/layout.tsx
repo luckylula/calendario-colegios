@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import { Header } from "@/components/Header";
+import { LOGO_SRC } from "@/lib/branding";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -16,6 +17,10 @@ export const metadata: Metadata = {
   },
   description:
     "Gestió de calendaris escolars per als centres educatius de Control Play.",
+  icons: {
+    icon: LOGO_SRC,
+    apple: LOGO_SRC,
+  },
 };
 
 export default function RootLayout({

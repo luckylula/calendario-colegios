@@ -210,6 +210,9 @@ export function getCellColor(
 }
 
 export interface WeekRowData {
+  /** Calendar days of this week that belong to the month (Dl–Dg). */
+  weekNaturalDays: number;
+  /** Lective weekdays used for hours (excludes weekends, festius, vacances). */
   weekLectiveDays: number;
   days: (null | { date: Date; dayNum: number; inMonth: boolean })[];
 }
@@ -233,6 +236,7 @@ export function buildWeekRowsForMonth(
 
   while (cursor <= monthEnd) {
     const days: WeekRowData["days"] = [];
+    let weekNatural = 0;
     let weekLective = 0;
 
     for (let i = 0; i < 7; i++) {
@@ -242,6 +246,7 @@ export function buildWeekRowsForMonth(
         date.getUTCMonth() === month && date.getUTCFullYear() === year;
 
       if (inMonth) {
+        weekNatural++;
         if (isLectiveDay(date, inicioCurso, finCurso, dayEventMap)) {
           weekLective++;
         }
@@ -253,7 +258,11 @@ export function buildWeekRowsForMonth(
 
     const hasMonthDay = days.some((d) => d?.inMonth);
     if (hasMonthDay) {
-      weeks.push({ weekLectiveDays: weekLective, days });
+      weeks.push({
+        weekNaturalDays: weekNatural,
+        weekLectiveDays: weekLective,
+        days,
+      });
     }
 
     cursor.setUTCDate(cursor.getUTCDate() + 7);
@@ -320,6 +329,59 @@ export function countLectiveDaysForMonth(
   return weeks.reduce((sum, week) => sum + week.weekLectiveDays, 0);
 }
 
+/**
+ * Natural calendar days of the month that fall within the school course.
+ * Full months = 28/29/30/31; Sept/June are clipped to inicio/fin de curs.
+ */
+export function countNaturalDaysInCourseForMonth(
+  year: number,
+  month: number,
+  inicioCurso: Date,
+  finCurso: Date
+): number {
+  const monthStart = new Date(Date.UTC(year, month, 1));
+  const monthEnd = new Date(Date.UTC(year, month + 1, 0));
+  const start = inicioCurso.getTime() > monthStart.getTime() ? inicioCurso : monthStart;
+  const end = finCurso.getTime() < monthEnd.getTime() ? finCurso : monthEnd;
+  if (end.getTime() < start.getTime()) return 0;
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return (
+    Math.round(
+      (Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()) -
+        Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())) /
+        msPerDay
+    ) + 1
+  );
+}
+
+export interface MonthNaturalSummary {
+  year: number;
+  month: number;
+  label: string;
+  /** Natural days in course for this month (not lective). */
+  naturalDays: number;
+}
+
+export function buildMonthNaturalSummaries(
+  months: { year: number; month: number }[],
+  inicioCurso: Date,
+  finCurso: Date
+): MonthNaturalSummary[] {
+  return sortSchoolYearMonths(months).map(({ year, month }) => ({
+    year,
+    month,
+    label: monthNameUpper(month),
+    naturalDays: countNaturalDaysInCourseForMonth(
+      year,
+      month,
+      inicioCurso,
+      finCurso
+    ),
+  }));
+}
+
+/** @deprecated Prefer buildMonthNaturalSummaries for the Excel month list. */
 export interface MonthLectiveSummary {
   year: number;
   month: number;
@@ -376,7 +438,8 @@ export interface ComputHoresResult {
 
 export function buildComputHores(params: {
   horasSemanales: number;
-  totalLectiveDays: number;
+  /** Natural days of the course (sum of month list), not lective days. */
+  diesTotalsMenjadors: number;
   vacancesCalendar: number;
   computHores: number;
   horesConveni?: number;
@@ -390,7 +453,7 @@ export function buildComputHores(params: {
   const jornadaReferencia = params.jornadaReferencia ?? 37.5;
 
   const horesMenjadorCalendariEscolar = roundHours(
-    (params.totalLectiveDays * horesConveni) / diesAnuals
+    (params.diesTotalsMenjadors * horesConveni) / diesAnuals
   );
   const horesMenjadorSegonsJornada = roundHours(
     (horesMenjadorCalendariEscolar * params.horasSemanales) / jornadaReferencia
@@ -403,7 +466,7 @@ export function buildComputHores(params: {
     horesConveni,
     diesAnuals,
     diesVacancesConveni,
-    diesTotalsMenjadors: params.totalLectiveDays,
+    diesTotalsMenjadors: params.diesTotalsMenjadors,
     vacancesCalendar: params.vacancesCalendar,
     horesMenjadorCalendariEscolar,
     horesMenjadorSegonsJornada,

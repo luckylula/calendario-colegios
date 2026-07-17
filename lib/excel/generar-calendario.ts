@@ -31,7 +31,7 @@ import {
   WEEKDAYS_CA,
   buildComputHores,
   buildDayEventMap,
-  buildMonthLectiveSummaries,
+  buildMonthNaturalSummaries,
   buildWeekRowsForMonth,
   chunkMonths,
   colForMonthBlock,
@@ -735,20 +735,19 @@ export async function generarExcelCalendario(
 
   currentRow += 1;
   const legendStart = currentRow;
-  const monthSummaries = buildMonthLectiveSummaries(
+  const monthSummaries = buildMonthNaturalSummaries(
     months,
     calendario.inicioCurso,
-    calendario.finCurso,
-    dayEventMap
+    calendario.finCurso
   );
-  const totalLectiveDays = monthSummaries.reduce(
-    (sum, month) => sum + month.lectiveDays,
+  const diesTotalsMenjadors = monthSummaries.reduce(
+    (sum, month) => sum + month.naturalDays,
     0
   );
   const vacancesCalendar = countEventDaysByType(calendario.eventos, ["vacaciones"]);
   const comput = buildComputHores({
     horasSemanales,
-    totalLectiveDays,
+    diesTotalsMenjadors,
     vacancesCalendar,
     computHores: totalComputHores,
     horesConveni: HORES_CONVENI_ANUALS,
@@ -790,7 +789,7 @@ export async function generarExcelCalendario(
       sheet,
       legendStart + index,
       month.label,
-      month.lectiveDays
+      month.naturalDays
     );
   });
 
@@ -799,7 +798,7 @@ export async function generarExcelCalendario(
     sheet,
     monthTotalRow,
     "TOTAL",
-    totalLectiveDays,
+    diesTotalsMenjadors,
     true
   );
 

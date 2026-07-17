@@ -72,11 +72,9 @@ export function formatHoresPerDia(horasSemanales: number): string {
   return formatHoresLabel(horasSemanales / 5);
 }
 
-/** Jornades: sempre inici + fi. Festius: un sol dia si no hi ha nom. */
-export function requiereRangoFechas(tipo: TipoEvento, tieneNombre = false): boolean {
-  if (tipo === "jornada_intensiva" || tipo === "jornada_continuada") return true;
-  if (tipo === "vacaciones") return true;
-  return tieneNombre;
+/** Solo vacaciones (Nadal, Setmana Santa…) exigen inicio + fin. El resto: fin opcional. */
+export function requiereRangoFechas(tipo: TipoEvento, _tieneNombre = false): boolean {
+  return tipo === "vacaciones";
 }
 
 export function esFestivoUnDia(tipo: TipoEvento, tieneNombre = false): boolean {

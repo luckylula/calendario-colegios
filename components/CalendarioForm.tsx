@@ -43,10 +43,8 @@ function EventoRow({
   showTipo?: boolean;
   allowRango?: boolean;
 }) {
-  const tieneNombre = Boolean(evento.nombre?.trim());
-  const mostrarFi = allowRango && requiereRangoFechas(evento.tipo, tieneNombre);
-  const fiObligatori =
-    evento.tipo === "jornada_intensiva" || evento.tipo === "jornada_continuada";
+  const fiObligatori = requiereRangoFechas(evento.tipo);
+  const mostrarFi = allowRango;
 
   return (
     <div className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 sm:grid-cols-12">
@@ -80,21 +78,25 @@ function EventoRow({
           placeholder={TIPO_EVENTO_LABELS[evento.tipo]}
         />
       </div>
-      <div className={mostrarFi ? "sm:col-span-2" : "sm:col-span-3"}>
-        <label className="mb-1 block text-xs font-medium text-slate-500">
-          {mostrarFi ? "Inici" : "Data"}
-        </label>
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium text-slate-500">Inici</label>
         <input
           type="date"
           value={evento.fechaInicio}
           onChange={(e) => onChange({ ...evento, fechaInicio: e.target.value })}
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          required={fiObligatori}
         />
       </div>
       {mostrarFi && (
         <div className="sm:col-span-2">
           <label className="mb-1 block text-xs font-medium text-slate-500">
-            Fi{fiObligatori ? "" : " (opcional)"}
+            Fi
+            {fiObligatori ? (
+              ""
+            ) : (
+              <span className="font-normal text-slate-400"> (opcional)</span>
+            )}
           </label>
           <input
             type="date"
@@ -103,6 +105,7 @@ function EventoRow({
               onChange({ ...evento, fechaFin: e.target.value || null })
             }
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            required={fiObligatori}
           />
         </div>
       )}
@@ -393,6 +396,9 @@ export function CalendarioForm({
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-slate-900">Vacances</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Nadal i Setmana Santa: cal indicar data d&apos;inici i de fi.
+        </p>
         <div className="space-y-3">
           {VACACIONES_PREDEFINIDAS.map(({ nombre }) => {
             const evento =
@@ -437,8 +443,7 @@ export function CalendarioForm({
 
         {otrosEventos.length === 0 ? (
           <p className="text-sm text-slate-500">
-            Festius: nom opcional, normalment un sol dia. Jornada intensiva i continuada:
-            cal indicar inici i fi.
+            Inici obligatori. Fi i nom opcionals (si no hi ha fi, compta com un sol dia).
           </p>
         ) : (
           <div className="space-y-3">

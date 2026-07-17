@@ -50,9 +50,8 @@ export function validateCalendarioPayload(body: {
     if (!evento.fechaInicio) continue;
 
     const label = eventoLabel(evento);
-    const tieneNombre = Boolean(evento.nombre?.trim());
 
-    if (requiereRangoFechas(evento.tipo, tieneNombre) && !evento.fechaFin) {
+    if (requiereRangoFechas(evento.tipo) && !evento.fechaFin) {
       return `Falta la data de fi per a "${label}"`;
     }
 
@@ -70,16 +69,8 @@ export function sanitizeEventos(eventos: EventoFormInput[]) {
   return eventos
     .filter((e) => e.fechaInicio)
     .map((e) => {
-      const hasCustomName = Boolean(e.nombre?.trim());
       const fechaInicio = parseDateInput(e.fechaInicio);
-      const necesitaRango = requiereRangoFechas(e.tipo, hasCustomName);
-      const fechaFin = necesitaRango
-        ? e.fechaFin
-          ? parseDateInput(e.fechaFin)
-          : null
-        : hasCustomName && e.fechaFin
-          ? parseDateInput(e.fechaFin)
-          : null;
+      const fechaFin = e.fechaFin ? parseDateInput(e.fechaFin) : null;
 
       return {
         tipo: e.tipo,
