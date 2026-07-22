@@ -91,6 +91,48 @@ export function generarOpcionesCurso(cantidad = 5): string[] {
   return opciones;
 }
 
+/** Parseja "2026-2027" → anys d'inici i fi del curs. */
+export function parseAniosCurso(curso: string): { inicio: number; fin: number } | null {
+  const match = /^(\d{4})-(\d{4})$/.exec(curso.trim());
+  if (!match) return null;
+  return { inicio: Number(match[1]), fin: Number(match[2]) };
+}
+
+/** 1 de setembre de l'any d'inici del curs. */
+export function fechaPorDefectoInicioCurso(curso: string): string {
+  const años = parseAniosCurso(curso);
+  return años ? `${años.inicio}-09-01` : "";
+}
+
+/** 20 de juny de l'any de fi del curs. */
+export function fechaPorDefectoFinCurso(curso: string): string {
+  const años = parseAniosCurso(curso);
+  return años ? `${años.fin}-06-20` : "";
+}
+
+/**
+ * Data d'obertura del datepicker quan el camp està buit,
+ * segons el tipus d'esdeveniment / vacances.
+ */
+export function fechaPorDefectoEvento(
+  curso: string,
+  opts?: { nombre?: string; tipo?: TipoEvento; esFi?: boolean }
+): string {
+  const años = parseAniosCurso(curso);
+  if (!años) return "";
+
+  const nombre = opts?.nombre ?? "";
+  if (nombre === "Nadal") {
+    return opts?.esFi ? `${años.fin}-01-07` : `${años.inicio}-12-20`;
+  }
+  if (nombre === "Setmana Santa") {
+    return opts?.esFi ? `${años.fin}-04-05` : `${años.fin}-03-20`;
+  }
+
+  // Festius i jornades: dins del curs (setembre de l'any d'inici)
+  return `${años.inicio}-09-01`;
+}
+
 export function parseDateInput(value: string): Date {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));

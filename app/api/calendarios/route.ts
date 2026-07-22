@@ -7,6 +7,28 @@ import { sanitizeEventos, validateCalendarioPayload } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
+/** Lista calendarios disponibles para importar (excluye un colegio opcional). */
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const excludeColegioId = searchParams.get("excludeColegioId") ?? undefined;
+
+  const calendarios = await prisma.calendarioCurso.findMany({
+    where: excludeColegioId ? { colegioId: { not: excludeColegioId } } : undefined,
+    orderBy: [{ curso: "desc" }, { updatedAt: "desc" }],
+    select: {
+      id: true,
+      curso: true,
+      estado: true,
+      inicioCurso: true,
+      finCurso: true,
+      tipoPersonal: true,
+      colegio: { select: { id: true, nombre: true } },
+    },
+  });
+
+  return NextResponse.json(calendarios);
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as CalendarioPayload & { id?: string };
 

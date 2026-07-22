@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState, type InputHTMLAttributes } from "react";
 import type { TipoEvento, TipoPersonal } from "@/generated/client";
 import {
   TIPO_EVENTO_LABELS,
@@ -14,6 +14,9 @@ import {
   horasSemanalesPorTipo,
   parseHorasSemanales,
   requiereRangoFechas,
+  fechaPorDefectoInicioCurso,
+  fechaPorDefectoFinCurso,
+  fechaPorDefectoEvento,
 } from "@/lib/constants";
 import {
   createEmptyCalendarioForm,
@@ -30,18 +33,64 @@ interface CalendarioFormProps {
   onSaved?: (id: string) => void;
 }
 
+type CalendarioImportOption = {
+  id: string;
+  curso: string;
+  estado: string;
+  tipoPersonal: TipoPersonal;
+  colegio: { id: string; nombre: string };
+};
+
+/** Date input que, si està buit, obre el calendari al mes/data suggerida. */
+function DateField({
+  value,
+  onChange,
+  emptyOpenDate,
+  className,
+  ...rest
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  emptyOpenDate?: string;
+  className?: string;
+} & Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "type" | "value" | "onChange" | "className"
+>) {
+  return (
+    <input
+      type="date"
+      {...rest}
+      value={value}
+      className={className}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={(e) => {
+        if (!value && emptyOpenDate) {
+          e.currentTarget.value = emptyOpenDate;
+          onChange(emptyOpenDate);
+        }
+        rest.onFocus?.(e);
+      }}
+    />
+  );
+}
+
 function EventoRow({
   evento,
   onChange,
   onRemove,
   showTipo = true,
   allowRango = true,
+  emptyOpenInicio,
+  emptyOpenFi,
 }: {
   evento: EventoFormInput;
   onChange: (evento: EventoFormInput) => void;
   onRemove?: () => void;
   showTipo?: boolean;
   allowRango?: boolean;
+  emptyOpenInicio?: string;
+  emptyOpenFi?: string;
 }) {
   const fiObligatori = requiereRangoFechas(evento.tipo);
   const mostrarFi = allowRango;
@@ -80,10 +129,10 @@ function EventoRow({
       </div>
       <div className="sm:col-span-2">
         <label className="mb-1 block text-xs font-medium text-slate-500">Inici</label>
-        <input
-          type="date"
+        <DateField
           value={evento.fechaInicio}
-          onChange={(e) => onChange({ ...evento, fechaInicio: e.target.value })}
+          onChange={(fechaInicio) => onChange({ ...evento, fechaInicio })}
+          emptyOpenDate={emptyOpenInicio}
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           required={fiObligatori}
         />
@@ -98,12 +147,12 @@ function EventoRow({
               <span className="font-normal text-slate-400"> (opcional)</span>
             )}
           </label>
-          <input
-            type="date"
+          <DateField
             value={evento.fechaFin ?? ""}
-            onChange={(e) =>
-              onChange({ ...evento, fechaFin: e.target.value || null })
+            onChange={(fechaFin) =>
+              onChange({ ...evento, fechaFin: fechaFin || null })
             }
+            emptyOpenDate={emptyOpenFi}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             required={fiObligatori}
           />
@@ -139,10 +188,70 @@ export function CalendarioForm({
     initialData ?? createEmptyCalendarioForm(generarOpcionesCurso()[1])
   );
   const [savedId, setSavedId] = useState<string | undefined>(calendarioId);
-  const [loading, setLoading] = useState<"save" | "generate" | "autofill" | null>(null);
+  const [loading, setLoading] = useState<
+    "save" | "generate" | "autofill" | "import" | null
+  >(null);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(
     null
   );
+  const [showImport, setShowImport] = useState(false);
+  const [importOptions, setImportOptions] = useState<CalendarioImportOption[]>([]);
+  const [importColegioId, setImportColegioId] = useState("");
+  const [importCalendarioId, setImportCalendarioId] = useState("");
+  const [loadingImportList, setLoadingImportList] = useState(false);
+
+  const importColegios = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const option of importOptions) {
+      map.set(option.colegio.id, option.colegio.nombre);
+    }
+    return Array.from(map.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "ca"));
+  }, [importOptions]);
+
+  const calendariosDelColegio = useMemo(
+    () => importOptions.filter((o) => o.colegio.id === importColegioId),
+    [importOptions, importColegioId]
+  );
+
+  useEffect(() => {
+    if (!showImport) return;
+
+    let cancelled = false;
+    async function loadImportOptions() {
+      setLoadingImportList(true);
+      try {
+        const response = await fetch(
+          `/api/calendarios?excludeColegioId=${encodeURIComponent(colegioId)}`
+        );
+        const data = await response.json();
+        if (cancelled) return;
+        if (!response.ok) {
+          setMessage({
+            type: "error",
+            text: data.error ?? "No s'han pogut carregar els calendaris",
+          });
+          return;
+        }
+        setImportOptions(data as CalendarioImportOption[]);
+      } catch {
+        if (!cancelled) {
+          setMessage({
+            type: "error",
+            text: "Error de connexió en carregar calendaris",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoadingImportList(false);
+      }
+    }
+
+    void loadImportOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [showImport, colegioId]);
 
   const otrosEventos = form.eventos.filter(
     (e) =>
@@ -330,6 +439,66 @@ export function CalendarioForm({
     });
   }
 
+  async function importarCalendario() {
+    if (!importCalendarioId) {
+      setMessage({ type: "error", text: "Selecciona un calendari per importar" });
+      return;
+    }
+
+    setLoading("import");
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/calendarios/${importCalendarioId}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setMessage({
+          type: "error",
+          text: data.error ?? "No s'ha pogut importar el calendari",
+        });
+        return;
+      }
+
+      const origenNombre = data.colegio?.nombre ?? "un altre centre";
+
+      setForm({
+        curso: data.curso ?? form.curso,
+        inicioCurso: data.inicioCurso ?? "",
+        finCurso: data.finCurso ?? "",
+        tipoPersonal: data.tipoPersonal ?? "monitor",
+        horasSemanales:
+          typeof data.horasSemanales === "number"
+            ? data.horasSemanales
+            : horasSemanalesPorTipo(data.tipoPersonal ?? "monitor"),
+        creadoViaIa: false,
+        eventos: (data.eventos ?? []).map(
+          (e: EventoFormInput) => ({
+            tipo: e.tipo,
+            nombre: e.nombre,
+            fechaInicio: e.fechaInicio ?? "",
+            fechaFin: e.fechaFin ?? null,
+          })
+        ),
+      });
+
+      setShowImport(false);
+      setImportColegioId("");
+      setImportCalendarioId("");
+      setMessage({
+        type: "ok",
+        text: `Dades importades des de ${origenNombre} (${data.curso}). Revisa i ajusta abans de guardar.`,
+      });
+    } catch {
+      setMessage({
+        type: "error",
+        text: "Error de connexió en importar el calendari",
+      });
+    } finally {
+      setLoading(null);
+    }
+  }
+
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -338,15 +507,99 @@ export function CalendarioForm({
             <h1 className="text-2xl font-semibold text-slate-900">{colegioNombre}</h1>
             <p className="mt-1 text-sm text-slate-500">Nou calendari de curs escolar</p>
           </div>
-          <button
-            type="button"
-            onClick={autocompletar}
-            disabled={loading !== null}
-            className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-          >
-            {loading === "autofill" ? "Llegint PDF…" : "Autocompletar des del PDF"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowImport((prev) => !prev);
+                setMessage(null);
+              }}
+              disabled={loading !== null}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {showImport ? "Tancar importació" : "Importar calendari"}
+            </button>
+            <button
+              type="button"
+              onClick={autocompletar}
+              disabled={loading !== null}
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {loading === "autofill" ? "Llegint PDF…" : "Autocompletar des del PDF"}
+            </button>
+          </div>
         </div>
+
+        {showImport && (
+          <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="mb-3 text-sm text-slate-600">
+              Copia dates, festius i vacances d&apos;un calendari d&apos;un altre centre.
+              Després pots canviar el tipus de personal, treure dates o afegir-ne de noves
+              abans de guardar.
+            </p>
+            {loadingImportList ? (
+              <p className="text-sm text-slate-500">Carregant calendaris…</p>
+            ) : importColegios.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Encara no hi ha calendaris d&apos;altres centres per importar.
+              </p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">
+                    Centre d&apos;origen
+                  </label>
+                  <select
+                    value={importColegioId}
+                    onChange={(e) => {
+                      setImportColegioId(e.target.value);
+                      setImportCalendarioId("");
+                    }}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecciona un centre…</option>
+                    {importColegios.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">
+                    Calendari
+                  </label>
+                  <select
+                    value={importCalendarioId}
+                    onChange={(e) => setImportCalendarioId(e.target.value)}
+                    disabled={!importColegioId}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-50"
+                  >
+                    <option value="">Selecciona un calendari…</option>
+                    {calendariosDelColegio.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.curso}
+                        {c.estado === "confirmado" ? " · confirmat" : " · esborrany"}
+                        {" · "}
+                        {TIPO_PERSONAL_LABELS[c.tipoPersonal]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={importarCalendario}
+                    disabled={!importCalendarioId || loading !== null}
+                    className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {loading === "import" ? "Important…" : "Importar dades"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
@@ -355,7 +608,25 @@ export function CalendarioForm({
             </label>
             <select
               value={form.curso}
-              onChange={(e) => setForm((prev) => ({ ...prev, curso: e.target.value }))}
+              onChange={(e) => {
+                const nuevoCurso = e.target.value;
+                setForm((prev) => {
+                  const prevInicioDefault = fechaPorDefectoInicioCurso(prev.curso);
+                  const prevFinDefault = fechaPorDefectoFinCurso(prev.curso);
+                  return {
+                    ...prev,
+                    curso: nuevoCurso,
+                    inicioCurso:
+                      !prev.inicioCurso || prev.inicioCurso === prevInicioDefault
+                        ? fechaPorDefectoInicioCurso(nuevoCurso)
+                        : prev.inicioCurso,
+                    finCurso:
+                      !prev.finCurso || prev.finCurso === prevFinDefault
+                        ? fechaPorDefectoFinCurso(nuevoCurso)
+                        : prev.finCurso,
+                  };
+                });
+              }}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             >
               {generarOpcionesCurso().map((curso) => (
@@ -369,12 +640,12 @@ export function CalendarioForm({
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Inici de curs
             </label>
-            <input
-              type="date"
+            <DateField
               value={form.inicioCurso}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, inicioCurso: e.target.value }))
+              onChange={(inicioCurso) =>
+                setForm((prev) => ({ ...prev, inicioCurso }))
               }
+              emptyOpenDate={fechaPorDefectoInicioCurso(form.curso)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             />
           </div>
@@ -382,12 +653,10 @@ export function CalendarioForm({
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Fi de curs
             </label>
-            <input
-              type="date"
+            <DateField
               value={form.finCurso}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, finCurso: e.target.value }))
-              }
+              onChange={(finCurso) => setForm((prev) => ({ ...prev, finCurso }))}
+              emptyOpenDate={fechaPorDefectoFinCurso(form.curso)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             />
           </div>
@@ -410,6 +679,11 @@ export function CalendarioForm({
                 evento={evento}
                 showTipo={false}
                 onChange={(e) => updateVacacion(nombre, e)}
+                emptyOpenInicio={fechaPorDefectoEvento(form.curso, { nombre })}
+                emptyOpenFi={fechaPorDefectoEvento(form.curso, {
+                  nombre,
+                  esFi: true,
+                })}
               />
             );
           })}
@@ -453,6 +727,15 @@ export function CalendarioForm({
                 evento={evento}
                 onChange={(e) => updateOtroEvento(index, e)}
                 onRemove={() => removeOtroEvento(index)}
+                emptyOpenInicio={fechaPorDefectoEvento(form.curso, {
+                  tipo: evento.tipo,
+                  nombre: evento.nombre,
+                })}
+                emptyOpenFi={fechaPorDefectoEvento(form.curso, {
+                  tipo: evento.tipo,
+                  nombre: evento.nombre,
+                  esFi: true,
+                })}
               />
             ))}
           </div>
